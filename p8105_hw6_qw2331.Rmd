@@ -25,3 +25,30 @@ scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 ```
 
+
+## Problem 1
+
+**Load the data**
+```{r}
+baby_bwt_raw <- 
+  read_csv("./data/birthweight.csv")
+
+# Check for missing values and a brief data review
+summary(baby_bwt_raw)
+str(baby_bwt_raw) 
+```
+
+**Clean the data**
+```{r}
+# Convert numeric to factor
+race <- c("White", "Black", "Asian", "Puerto Rican", "Other", "Unkown")
+
+baby_bwt_df <- 
+  baby_bwt_raw %>% 
+  mutate(
+    babysex = factor(recode(babysex, `1` = "male", `2` = "female")),
+    malform = factor(recode(malform, `0` = "absent", `1` = "present")),
+    frace = factor(race[frace]),
+    mrace = factor(race[mrace])
+  )
+```
