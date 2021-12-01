@@ -33,14 +33,14 @@ set.seed(1234)
 ## Problem 1
 
 ### 1.1 Load the data
-```{r data import}
+```{r}
 baby_bwt_raw <- 
   read_csv("./data/birthweight.csv")
 ```
 
 
 ### 1.2 Clean the data
-```{r data clean}
+```{r}
 # Convert numeric to factor
 race <- c("White", "Black", "Asian", "Puerto Rican", "Other", "Unkown")
 
@@ -214,3 +214,80 @@ baby_bwt_cv_df %>%
   )
 ```
 
+The second model is ruled out as its highest RMSE than the others. And although the RMSE of the first model is similar with the third one, the first one has a much lower complexity.
+
+## Problem 2
+
+### 2.1 Load the data
+```{r}
+weather_df <-  
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+### 2.2 Bootstrapping
+```{r}
+# Write a function
+boot_sample <- function(df) {
+  sample_frac(df, size = 1, replace = TRUE)
+}
+
+# Use 5000 bootstrap samples
+bootstrap_df <- 
+  tibble(
+    strap_number = c(1:5000),
+    strap_sample = rerun(5000, boot_sample(weather_df))
+  )
+
+# Plot the distribution of the two estimates
+bootstrap_results <- 
+  bootstrap_df %>% 
+  mutate(
+    models = map(strap_sample, ~lm(tmax ~ tmin, data = .x)),
+    results1 = map(models, broom::glance),
+    results2 = map(models, broom::tidy)
+  ) %>% 
+  unnest(results1) %>% 
+  dplyr::select(strap_number, r.squared, results2) %>% 
+  unnest(results2) %>% 
+  group_by(strap_number) %>% 
+  mutate(
+    estimate2 = lead(estimate, n = 1),
+    log_result = log10(estimate * estimate2)
+  ) %>% 
+  dplyr::select(strap_number, r.squared, log_result) %>% 
+  filter(is.na(log_result) == FALSE)
+
+bootstrap_results %>% 
+  pivot_longer(
+    2:3,
+    names_to = "quantity",
+    values_to = "estimate"
+  ) %>% 
+  ggplot(aes(x = estimate, fill = quantity)) + 
+  geom_histogram(bins = 30, show.legend = FALSE) + 
+  facet_grid(~ quantity, scales = "free") + 
+  labs(
+    title = "Distribution of two quantities",
+    x = "Estimate",
+    y = "Count"
+  )
+```
+
+As the plots shown, the estimate of the log result is around 0.875 while the estimate of r squared is somewhere around 0.915.
+
+### 2.3 Compute confidence intervals 
+```{r}
+bootstrap_results %>% 
+  map_df(~ quantile(., probs = c(.025, .975)))
+```
+
+From the above calculation, the 95% confidence interval for $\hat r^2$ is (0.893, 0.927) and (0.853, 0.894) for $\log(\hat \beta_0 * \hat \beta_1)$.
