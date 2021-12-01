@@ -5,6 +5,7 @@ output: github_document
 
 ```{r setup, echo = FALSE, message = FALSE}
 library(tidyverse)
+library(patchwork)
 
 knitr::opts_chunk$set(
   fig.width = 10,
@@ -34,6 +35,7 @@ baby_bwt_raw <-
   read_csv("./data/birthweight.csv")
 ```
 
+
 ### 1.2 Clean the data
 ```{r data clean}
 # Convert numeric to factor
@@ -46,16 +48,23 @@ baby_bwt_df <-
     malform = factor(recode(malform, `0` = "absent", `1` = "present")),
     frace = factor(race[frace]),
     mrace = factor(race[mrace])
-  )
+  ) %>% 
+  distinct()
+
+# Check missing values
+baby_bwt_df %>% 
+  is.na() %>% 
+  colSums()
 ```
+
 
 ### 1.3 Propose a regression model
 
-**1.3.1 Check distribution of target variable `brithweight`**
+**1.3.1 Distribution of target variable `brithweight`**
 ```{r}
 baby_bwt_df %>% 
   ggplot(aes(bwt)) + 
-  geom_histogram(aes(y = ..density..), fill = "orange", alpha = .6) +
+  geom_histogram(aes(y = ..density..), fill = "orange") +
   geom_density(alpha = .4) + 
   labs(
     title = "Density of birthweight",
@@ -66,9 +75,9 @@ baby_bwt_df %>%
 
 **1.3.2 Summary statistics and check outliers**
 ```{r}
-# Check for missing values and a brief data review
+# Check for missing values
+# Or a brief data review using function str()
 summary(baby_bwt_df)
-str(baby_bwt_df)
 
 # Check outliers using boxplots
 pivotdata <- 
@@ -108,4 +117,55 @@ ggcorrplot::ggcorrplot(
     fill = guide_legend(title = "Pearson\nCorrelation")
   )
 ```
+
+**1.3.4 Fit a regression model and diagnostics**
+```{r}
+# Fit a model
+baby_bwt_df <- 
+  baby_bwt_df %>% 
+  select(babysex, bhead, blength, bwt, gaweeks)
+
+mod1 <- lm(bwt ~ bhead + blength, data = baby_bwt_df)
+
+# Present the output
+mod1 %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  knitr::kable(digits = 3)
+
+# Diagnostics
+# Residuals vs. Fits plot
+res_fit_plot <-   
+  baby_bwt_df %>% 
+  modelr::add_residuals(mod1) %>% 
+  modelr::add_predictions(mod1) %>% 
+  ggplot(aes(x = pred, y = resid)) + 
+  geom_point(size = 1.5, alpha = .4) + 
+  geom_hline(yintercept = 0, linetype = "dotted") + 
+  labs(
+    title = "Residuals vs. Fitted",
+    x = "Fitted values",
+    y = "Residuals"
+  )
+
+# QQ plot
+qq_plot <- 
+  baby_bwt_df %>% 
+  ggplot(aes(sample = bwt)) + 
+  geom_qq(alpha = .4) + 
+  geom_qq_line(linetype = "dotted") + 
+  labs(
+    title = "Normal Q-Q",
+    x = "Theoretical Quantiles",
+    y = "Sample Quantiles"
+  )
+
+res_fit_plot + qq_plot
+```
+
+**Modeling process:**  
++ We firstly check the distribution of the target variable `bwt` and find out this variable follows normal distribution  
++ Then check out the missing values and outliers for numeric variables  
++ Visualize the correlation matrix and choose variables `bhead` and `blength` as these two variables reflect high correlations with the target variable `bwt`  
++ Build a linear regression model with low level of complexity
 
