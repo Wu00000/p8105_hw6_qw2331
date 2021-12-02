@@ -256,14 +256,14 @@ bootstrap_results <-
     results2 = map(models, broom::tidy)
   ) %>% 
   unnest(results1) %>% 
-  dplyr::select(strap_number, r.squared, results2) %>% 
+  select(strap_number, r.squared, results2) %>% 
   unnest(results2) %>% 
   group_by(strap_number) %>% 
   mutate(
     estimate2 = lead(estimate, n = 1),
     log_result = log10(estimate * estimate2)
   ) %>% 
-  dplyr::select(strap_number, r.squared, log_result) %>% 
+  select(strap_number, r.squared, log_result) %>% 
   filter(is.na(log_result) == FALSE)
 
 bootstrap_results %>% 
@@ -290,4 +290,4 @@ bootstrap_results %>%
   map_df(~ quantile(., probs = c(.025, .975)))
 ```
 
-From the above calculation, the 95% confidence interval for $\hat r^2$ is (0.893, 0.927) and (0.853, 0.894) for $\log(\hat \beta_0 * \hat \beta_1)$.
+From the above calculation, the 95% confidence interval for $\hat r^2$ is (0.894, 0.927) and (0.853, 0.895) for $\log(\hat \beta_0 * \hat \beta_1)$.
