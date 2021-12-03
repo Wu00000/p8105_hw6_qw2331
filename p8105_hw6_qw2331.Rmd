@@ -7,6 +7,7 @@ output: github_document
 library(tidyverse)
 library(modelr)
 library(patchwork)
+library(plyr)
 
 knitr::opts_chunk$set(
   fig.width = 10,
@@ -32,25 +33,29 @@ set.seed(1234)
 
 ## Problem 1
 
-### 1.1 Load the data
+### 1.1 Load data
 ```{r}
 baby_bwt_raw <- 
   read_csv("./data/birthweight.csv")
 ```
 
 
-### 1.2 Clean the data
+### 1.2 Clean data
 ```{r}
+# Briefly overview data type for each column
+sapply(baby_bwt_raw, class)
+
 # Convert numeric to factor
-race <- c("White", "Black", "Asian", "Puerto Rican", "Other", "Unkown")
+race_map <- 
+  c(`1` = "White", `2` = "Black", `3` = "Asian", `4` = "Puerto Rican", `8` = "Other", `9` = "Unkown")
 
 baby_bwt_df <- 
   baby_bwt_raw %>% 
   mutate(
     babysex = factor(recode(babysex, `1` = "male", `2` = "female")),
     malform = factor(recode(malform, `0` = "absent", `1` = "present")),
-    frace = factor(race[frace]),
-    mrace = factor(race[mrace])
+    frace = as.factor(revalue(as.character(frace), race_map)),
+    mrace = as.factor(revalue(as.character(mrace), race_map))
   ) %>% 
   distinct()
 
@@ -63,15 +68,15 @@ baby_bwt_df %>%
 
 ### 1.3 Propose a regression model
 
-**1.3.1 Distribution of target variable `brithweight`**
+**1.3.1 Distribution of the target variable `bwt`**
 ```{r}
 baby_bwt_df %>% 
   ggplot(aes(bwt)) + 
   geom_histogram(aes(y = ..density..), fill = "orange") +
-  geom_density(alpha = .4) + 
+  geom_density() + 
   labs(
-    title = "Density of birthweight",
-    x = "Birth Weight (grams)",
+    title = "Distribution of birthweight",
+    x = "Birthweight (grams)",
     y = "Density"
   )
 ```
@@ -82,10 +87,10 @@ baby_bwt_df %>%
 # Or a brief data review using function str()
 summary(baby_bwt_df)
 
-# Check outliers using boxplots
+# Check outliers using boxplot
 pivotdata <- 
   baby_bwt_df %>% 
-  select(2:6, 8, 10:12, 17:18, 20) %>% 
+  select(2:3, 5:6, 8, 10:12, 17:20) %>% 
   pivot_longer(
     everything(),
     names_to = "variable",
@@ -121,16 +126,17 @@ ggcorrplot::ggcorrplot(
   )
 ```
 
-**1.3.4 Fit a regression model and diagnostics**
+**1.3.4 Regression model and diagnostics**
 ```{r}
-# Fit a model
+# Fit model
 baby_bwt_df <- 
   baby_bwt_df %>% 
   select(babysex, bhead, blength, bwt, gaweeks)
 
+# Choose variables simply based on previous analysis
 mod1 <- lm(bwt ~ bhead + blength, data = baby_bwt_df)
 
-# Present the output
+# Present output
 mod1 %>% 
   broom::tidy() %>% 
   select(term, estimate, p.value) %>% 
@@ -151,7 +157,7 @@ res_fit_plot <-
     y = "Residuals"
   )
 
-# QQ plot
+# QQ-plot
 qq_plot <- 
   baby_bwt_df %>% 
   ggplot(aes(sample = bwt)) + 
@@ -167,19 +173,20 @@ res_fit_plot + qq_plot
 ```
 
 **Modeling process:**  
-+ We firstly check the distribution of the target variable `bwt` and find out this variable follows normal distribution  
-+ Then check out the missing values and outliers for numeric variables  
-+ Visualize the correlation matrix and choose variables `bhead` and `blength` as these two variables reflect high correlations with the target variable `bwt`  
-+ Build a linear regression model with low level of complexity
++ Check the distribution of the target variable `bwt`, which follows normal distribution  
++ Check missing values and outliers for numeric variables  
++ Visualize the correlation matrix and choose variables `bhead` and `blength` intuitively as these two variables reflect high correlations with the target variable `bwt`  
++ Build a linear regression model with the main effects of these two only  
++ Model diagnosis using residual vs. fitted values plot and qq-plot
 
-
-**1.3.5 Compare with other two models using CV**
+**1.3.5 Compare with the other two models using CV**
 ```{r}
 # Split training/testing 100 times
 baby_bwt_cv_df <- 
   crossv_mc(baby_bwt_df, 1000)
 
-# Fit other two models
+# Fit the previous model and the other two
+# Use RMSE to compare the predictions
 baby_bwt_cv_df <- 
   baby_bwt_cv_df %>% 
   mutate(
@@ -195,7 +202,6 @@ baby_bwt_cv_df <-
     rmse_mod3 = map2_dbl(mod3, test, ~rmse(model = .x, data = .y))
   )
 
-# Using RMSE to compare the models
 baby_bwt_cv_df %>% 
   select(c(7:9)) %>% 
   pivot_longer(
@@ -214,11 +220,11 @@ baby_bwt_cv_df %>%
   )
 ```
 
-The second model is ruled out as its highest RMSE than the others. And although the RMSE of the first model is similar with the third one, the first one has a much lower complexity.
+From the violin plot, the second model is ruled out as its highest RMSE. Although the RMSE of the first model is similar with the third one and cannot be differentiated visually, the first model is still preferred based on the "parsimony rule".
 
 ## Problem 2
 
-### 2.1 Load the data
+### 2.1 Load data
 ```{r}
 weather_df <-  
   rnoaa::meteo_pull_monitors(
@@ -233,38 +239,44 @@ weather_df <-
   select(name, id, everything())
 ```
 
-### 2.2 Bootstrapping
+### 2.2 Bootstrapping and visualization
 ```{r}
 # Write a function
 boot_sample <- function(df) {
   sample_frac(df, size = 1, replace = TRUE)
 }
 
-# Use 5000 bootstrap samples
+# Resample data 5000 times
 bootstrap_df <- 
   tibble(
     strap_number = c(1:5000),
     strap_sample = rerun(5000, boot_sample(weather_df))
   )
 
-# Plot the distribution of the two estimates
+# Plot distribution of the two estimates
+# Choose r-squared as the model's simplicity
 bootstrap_results <- 
   bootstrap_df %>% 
   mutate(
     models = map(strap_sample, ~lm(tmax ~ tmin, data = .x)),
     results1 = map(models, broom::glance),
     results2 = map(models, broom::tidy)
-  ) %>% 
+  )
+
+bootstrap_results <- 
+  bootstrap_results %>% 
+  # Select r squared
   unnest(results1) %>% 
   select(strap_number, r.squared, results2) %>% 
+  # Log the product of intercept and slope
   unnest(results2) %>% 
   group_by(strap_number) %>% 
   mutate(
     estimate2 = lead(estimate, n = 1),
     log_result = log10(estimate * estimate2)
   ) %>% 
-  select(strap_number, r.squared, log_result) %>% 
-  filter(is.na(log_result) == FALSE)
+  filter(term == "(Intercept)") %>% 
+  select(strap_number, r.squared, log_result)
 
 bootstrap_results %>% 
   pivot_longer(
@@ -276,18 +288,23 @@ bootstrap_results %>%
   geom_histogram(bins = 30, show.legend = FALSE) + 
   facet_grid(~ quantity, scales = "free") + 
   labs(
-    title = "Distribution of two quantities",
+    title = "Distribution of two estimated quantities",
     x = "Estimate",
     y = "Count"
   )
 ```
 
-As the plots shown, the estimate of the log result is around 0.875 while the estimate of r squared is somewhere around 0.915.
+As the plots shown, the estimate of the log result is around 0.875 while the estimate of r squared is nearly 0.916.
 
 ### 2.3 Compute confidence intervals 
 ```{r}
-bootstrap_results %>% 
-  map_df(~ quantile(., probs = c(.025, .975)))
+bootstrap_results %>%  
+  as_tibble() %>% 
+  select(-1) %>% 
+  map_df(~ quantile(., probs = c(.025, .975))) %>% 
+  mutate(name = c("R.squared", "Log result")) %>% 
+  select(3, 1, 2) %>% 
+  knitr::kable(digits = 3)
 ```
 
-From the above calculation, the 95% confidence interval for $\hat r^2$ is (0.894, 0.927) and (0.853, 0.895) for $\log(\hat \beta_0 * \hat \beta_1)$.
+From the above calculation, the 95% confidence interval for $\hat r^2$ is (0.894, 0.927) and (0.853, 0.894) for $\log(\hat \beta_0 * \hat \beta_1)$.
